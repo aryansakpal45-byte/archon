@@ -38,18 +38,34 @@ def run_engine():
             if f.endswith(".json"):
                 os.remove(os.path.join("output", f))
 
-    root_target = input("[+] Enter Root Corporate Domain (e.g., github.com): ").strip()
-    if not root_target:
-        print("[✗] Error: Target cannot be null.")
+    if not os.path.exists("targets.txt"):
+        print("[✗] Error: targets.txt not found.")
+        return
+
+    with open("targets.txt", "r") as f:
+        root_targets = [line.strip() for line in f if line.strip()]
+
+    if not root_targets:
+        print("[✗] Error: targets.txt is empty.")
         return
 
     print(f"\n[*] Activating Passive Discovery Array against global logs...")
     scout = ArchonScout()
-    targets = scout.harvest_subdomains(root_target)
+
+    targets = []
+    for root_target in root_targets:
+        subdomains = scout.harvest_subdomains(root_target)
+        if subdomains:
+            targets.extend(subdomains)
+        else:
+            targets.append(root_target)
+
+    # De-duplicate and sort
+    targets = sorted(list(set(targets)))
 
     if not targets:
-        print(f"[!] No secondary perimeters found in public logs. Defaulting to root.")
-        targets = [root_target]
+        print(f"[!] No targets found.")
+        return
     else:
         print(f"[✓] Successfully harvested {len(targets)} active subdomains passively!")
         print("-" * 65)

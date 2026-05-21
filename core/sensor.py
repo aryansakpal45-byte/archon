@@ -14,24 +14,18 @@ class ArchonEyes:
             "X-Content-Type-Options": {"severity": "Medium", "desc": "MIME-sniffing protection disabled; allows script cross-execution."}
         }
         # Enterprise Infrastructure Open Ports Matrix
-        self.audit_ports = {
-            22: "SSH Management Panel",
-            80: "Standard Web HTTP",
-            443: "Secure Web HTTPS",
-            8080: "Alternative/Legacy Web Proxy",
-            8443: "Alternative Secure Web Management"
-        }
+        self.audit_ports = [80, 443, 22, 8080]
 
     def audit_network_ports(self, hostname: str) -> dict:
         """Lightweight asynchronous socket connector loop"""
         open_services = {}
-        for port, service_name in self.audit_ports.items():
+        for port in self.audit_ports:
             try:
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
                     sock.settimeout(1.5)
                     result = sock.connect_ex((hostname, port))
                     if result == 0:
-                        open_services[str(port)] = service_name
+                        open_services[str(port)] = "Open"
             except Exception:
                 pass
         return open_services
