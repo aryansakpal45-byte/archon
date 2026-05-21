@@ -13,7 +13,7 @@ def process_single_target(sensor, target, idx, total):
     raw_intel = sensor.scan_target(target)
     vulns = raw_intel["vulnerabilities_detected"]
     high_count = sum(1 for v in vulns if v["severity"] == "High")
-    ssl_info = raw_intel["ssl_metadata"]
+    ssl_info = raw_intel.get("ssl_metadata", {"status": "Unknown", "issuer": "Unknown"})
     
     with print_lock:
         print(f"[{idx}/{total}] RUNNING ENHANCED SCAN AGAINST: {target}")
@@ -23,7 +23,7 @@ def process_single_target(sensor, target, idx, total):
 
     # Format the file path to maintain uniform telemetry tracking
     sanitized = target.replace("https://", "").replace("http://", "").replace("/", "_")
-    output_path = f"output/https__{sanitized}_telemetry.json"
+    output_path = f"output/https__{sanitized}.json"
     with open(output_path, "w") as out_file:
         json.dump(raw_intel, out_file, indent=4)
 
