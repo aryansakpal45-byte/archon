@@ -3,7 +3,7 @@ import os
 import json
 
 def generate_master_report():
-    output_dir = "output"
+    output_dir = "results"
     print("=" * 70)
     print("   ▲ ARCHON INTEL AGGREGATOR // UNIFIED PERIMETER AUDITING REPORT ▲")
     print("=" * 70)

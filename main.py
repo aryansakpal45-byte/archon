@@ -6,24 +6,36 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.sensor import ArchonEyes
 from core.scout import ArchonScout
 from core.report import generate_master_report
+from connectors.shodan_conn import ShodanConnector
+from connectors.censys_conn import CensysConnector
 
 print_lock = threading.Lock()
 
-def process_single_target(sensor, target, idx, total):
+def process_single_target(sensor, connectors, target, idx, total):
+    # Core internal scan
     raw_intel = sensor.scan_target(target)
     vulns = raw_intel["vulnerabilities_detected"]
     high_count = sum(1 for v in vulns if v["severity"] == "High")
     ssl_info = raw_intel.get("ssl_metadata", {"status": "Unknown", "issuer": "Unknown"})
     
+    # API Connectors scan
+    api_results = []
+    for conn in connectors:
+        api_results.append(conn.fetch(target))
+
+    raw_intel["api_intel"] = api_results
+
     with print_lock:
         print(f"[{idx}/{total}] RUNNING ENHANCED SCAN AGAINST: {target}")
         print(f"    ├── Status: {raw_intel['status']} | Platform: {raw_intel['server_banner']}")
         print(f"    └── SSL: {ssl_info['status']} | Authority: {ssl_info['issuer']}")
+        for res in api_results:
+            print(f"    └── Connector {res['source']}: OK")
         print("-" * 65)
 
     # Format the file path to maintain uniform telemetry tracking
     sanitized = target.replace("https://", "").replace("http://", "").replace("/", "_")
-    output_path = f"output/https__{sanitized}.json"
+    output_path = f"results/https__{sanitized}.json"
     with open(output_path, "w") as out_file:
         json.dump(raw_intel, out_file, indent=4)
 
@@ -33,10 +45,12 @@ def run_engine():
     print("=" * 65)
     
     # Clean old records before fresh intelligence gathering
-    if os.path.exists("output"):
-        for f in os.listdir("output"):
+    if os.path.exists("results"):
+        for f in os.listdir("results"):
             if f.endswith(".json"):
-                os.remove(os.path.join("output", f))
+                os.remove(os.path.join("results", f))
+    else:
+        os.makedirs("results", exist_ok=True)
 
     if not os.path.exists("targets.txt"):
         print("[✗] Error: targets.txt not found.")
@@ -77,13 +91,13 @@ def run_engine():
     print("=" * 65)
     
     sensor = ArchonEyes()
-    os.makedirs("output", exist_ok=True)
+    connectors = [ShodanConnector(), CensysConnector()]
 
     max_threads = min(5, len(targets))
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
         futures = []
         for idx, target in enumerate(targets, start=1):
-            futures.append(executor.submit(process_single_target, sensor, target, idx, len(targets)))
+            futures.append(executor.submit(process_single_target, sensor, connectors, target, idx, len(targets)))
         
         for future in as_completed(futures):
             pass
