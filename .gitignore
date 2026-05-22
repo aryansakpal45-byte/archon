@@ -6,6 +6,7 @@
 # Databases & Reports
 *.db
 *.pdf
+security_posture_summary.md
 archon_data.db
 
 # Dependencies and caches

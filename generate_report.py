@@ -457,6 +457,88 @@ def build_pdf():
     # Build Document using our NumberedCanvas
     doc.build(story, canvasmaker=NumberedCanvas)
     print(f"[Report] Successfully created PDF report: {PDF_FILE}")
+    
+    # Generate Markdown Report
+    build_markdown(findings_by_target, all_vulns, alerts_raw, missing_headers, total_assets, total_ports, total_gaps, total_alerts)
+
+def build_markdown(findings_by_target, all_vulns, alerts_raw, missing_headers, total_assets, total_ports, total_gaps, total_alerts):
+    md_file = "security_posture_summary.md"
+    timestamp = datetime.now().strftime("%B %d, %Y %H:%M")
+    
+    md_content = []
+    md_content.append("# SECURITY POSTURE EXECUTIVE SUMMARY")
+    md_content.append("**Automated Vulnerability Scan, Threat Intelligence & Perimeter Audit Report**\n")
+    md_content.append(f"- **Scope:** Selected Assets (External Perimeter)")
+    md_content.append(f"- **Classification:** STAGE 1 - HIGHLY CONFIDENTIAL")
+    md_content.append(f"- **Generated On:** {timestamp}")
+    md_content.append(f"- **Auditor Profile:** Archon Autonomous Agent Suite v2.0\n")
+    md_content.append("---")
+    
+    md_content.append("\n## 1. Key Metrics\n")
+    md_content.append("| Metric | Count |")
+    md_content.append("| :--- | :--- |")
+    md_content.append(f"| **Total Assets** | {total_assets} |")
+    md_content.append(f"| **Exposed Ports** | {total_ports} |")
+    md_content.append(f"| **Security Gaps** | {total_gaps} |")
+    md_content.append(f"| **Watcher Alerts** | {total_alerts} |")
+    md_content.append("\n---")
+    
+    md_content.append("\n## 2. Executive Summary\n")
+    intro_txt = (
+        "This Executive Security Summary provides a consolidated view of findings compiled by the Archon Autonomous Security Suite. "
+        "The system scanned the active target inventory to enumerate exposed network ports, test secure HTTP configuration, and retrieve "
+        "passive intelligence from Shodan and Censys indexers. Simultaneously, the background Watcher daemon continuously monitored certificate "
+        "transparency logs and subdomain updates to capture immediate threat variations.\n\n"
+        "**Key Takeaways:** Multiple assets are exposing legacy clear-text web interfaces (Port 80) and missing standard HTTP Security Headers. "
+        "These deficiencies leave endpoints susceptible to Man-in-the-Middle (MITM) hijacking and Cross-Site Scripting (XSS). Immediate remediation "
+        "is recommended for the critical gaps identified below."
+    )
+    md_content.append(intro_txt)
+    md_content.append("\n---")
+    
+    md_content.append("\n## 3. Asset Perimeter Summary\n")
+    md_content.append("| Asset Target | Ports Exposed | Security Gaps | Audit Status |")
+    md_content.append("| :--- | :--- | :--- | :--- |")
+    for target, info in sorted(findings_by_target.items()):
+        ports_str = ", ".join(info["ports"]) if info["ports"] else "None Detected"
+        gaps_cnt = len(info["vulns"])
+        status_str = f"**{gaps_cnt} Gaps**" if gaps_cnt > 0 else "Secure"
+        md_content.append(f"| `{target}` | {ports_str} | {gaps_cnt} | {status_str} |")
+    md_content.append("\n---")
+    
+    md_content.append("\n## 4. Detailed Vulnerability Breakdown\n")
+    md_content.append("| Target Endpoint | Severity | Security Header Gap | Threat Impact / Description |")
+    md_content.append("| :--- | :--- | :--- | :--- |")
+    for target, v in all_vulns:
+        severity = v.get("severity", "Medium")
+        name = v.get("vulnerability", "Unknown")
+        impact = v.get("threat_impact", "")
+        md_content.append(f"| `{target}` | **{severity}** | {name} | {impact} |")
+    md_content.append("\n---")
+    
+    md_content.append("\n## 5. Recommended Hardening Actions\n")
+    md_content.append("To address the missing headers, apply the following standard configurations to your web server configurations.\n")
+    
+    remediations = get_remediations_for_headers(list(missing_headers))
+    md_content.append("### Nginx Configuration Hardening")
+    md_content.append(f"```nginx\n{remediations['nginx']}\n```\n")
+    md_content.append("### Apache Hardening Header Block")
+    md_content.append(f"```apache\n{remediations['apache']}\n```\n")
+    md_content.append("### Caddy Hardening Config")
+    md_content.append(f"```caddy\n{remediations['caddy']}\n```")
+    md_content.append("\n---")
+    
+    md_content.append("\n## 6. Live Watcher Alerts Log\n")
+    md_content.append("| Timestamp | Target Domain | Alert Type | Notification Message |")
+    md_content.append("| :--- | :--- | :--- | :--- |")
+    for row in alerts_raw[:15]:
+        atype, target, msg, ts = row
+        md_content.append(f"| {ts} | `{target}` | {atype} | {msg} |")
+        
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(md_content))
+        
+    print(f"[Report] Successfully created Markdown report: {md_file}")
 
 if __name__ == "__main__":
     build_pdf()
