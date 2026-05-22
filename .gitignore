@@ -3,8 +3,9 @@
 *.key
 *.pem
 
-# Databases
+# Databases & Reports
 *.db
+*.pdf
 archon_data.db
 
 # Dependencies and caches
