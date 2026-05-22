@@ -1,0 +1,11 @@
+{
+    "target": "https://cms.youtube.com",
+    "timestamp": "2026-05-21T12:39:46.024281Z",
+    "status": "200 OK",
+    "server_banner": "ESF",
+    "exposed_ports": {
+        "80": "Standard Web HTTP",
+        "443": "Secure Web HTTPS"
+    },
+    "vulnerabilities_detected": []
+}

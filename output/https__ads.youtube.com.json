@@ -1,0 +1,22 @@
+{
+    "target": "https://ads.youtube.com",
+    "timestamp": "2026-05-21T12:39:45.802734Z",
+    "status": "200 OK",
+    "server_banner": "sffe",
+    "exposed_ports": {
+        "80": "Standard Web HTTP",
+        "443": "Secure Web HTTPS"
+    },
+    "vulnerabilities_detected": [
+        {
+            "vulnerability": "Missing Strict-Transport-Security",
+            "severity": "High",
+            "threat_impact": "Lack of forced HTTPS encryption policies exposes users to MITM attacks."
+        },
+        {
+            "vulnerability": "Missing X-Frame-Options",
+            "severity": "Medium",
+            "threat_impact": "Missing clickjacking defense; site can be embedded inside frames."
+        }
+    ]
+}

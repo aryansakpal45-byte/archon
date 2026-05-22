@@ -1,0 +1,60 @@
+import os
+import asyncio
+import sqlite3
+import json
+import time
+import shodan
+from censys.search import CensysHosts
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Initialize API clients
+shodan_api = shodan.Shodan(os.getenv("SHODAN_API_KEY"))
+censys_api = CensysHosts(api_token=os.getenv("CENSYS_API_TOKEN"))
+
+# Setup Local Cache
+DB_FILE = "intel_cache.db"
+
+def init_db():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS cache 
+            (ip TEXT PRIMARY KEY, data TEXT, timestamp REAL)
+        """)
+
+def get_cached(ip):
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute("SELECT data, timestamp FROM cache WHERE ip=?", (ip,)).fetchone()
+        if row and (time.time() - row[1] < 86400): # 24h expiry
+            return json.loads(row[0])
+    return None
+
+def save_cache(ip, data):
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("INSERT OR REPLACE INTO cache VALUES (?, ?, ?)", 
+                     (ip, json.dumps(data), time.time()))
+
+async def fetch_intel(ip):
+    init_db()
+    cached = get_cached(ip)
+    if cached: return cached
+    
+    # Run API calls concurrently
+    loop = asyncio.get_event_loop()
+    
+    # Wrap blocking calls in run_in_executor to make them async-friendly
+    task1 = loop.run_in_executor(None, shodan_api.host, ip)
+    task2 = loop.run_in_executor(None, censys_api.view, ip)
+    
+    results = await asyncio.gather(task1, task2, return_exceptions=True)
+    
+    report = {"ip": ip, "shodan": results[0] if not isinstance(results[0], Exception) else None,
+              "censys": results[1] if not isinstance(results[1], Exception) else None}
+    
+    save_cache(ip, report)
+    return report
+
+if __name__ == "__main__":
+    asyncio.run(fetch_intel("8.8.8.8"))
+    print("Intelligence gathered and cached successfully.")

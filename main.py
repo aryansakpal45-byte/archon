@@ -1,83 +1,87 @@
-# main.py
 import json
 import os
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from core.sensor import ArchonEyes
-from core.scout import ArchonScout
-from core.report import generate_master_report
+import asyncio
+import sqlite3
+import time
+import socket
+import shodan
+from censys.search import CensysHosts
+from dotenv import load_dotenv
 
+# --- CONFIG & SETUP ---
+load_dotenv()
+# Initialize APIs
+shodan_api = shodan.Shodan(os.getenv("SHODAN_API_KEY"))
+censys_api = CensysHosts(api_token=os.getenv("CENSYS_API_TOKEN"))
+DB_FILE = "intel_cache.db"
 print_lock = threading.Lock()
 
-def process_single_target(sensor, target, idx, total):
-    raw_intel = sensor.scan_target(target)
-    vulns = raw_intel["vulnerabilities_detected"]
-    high_count = sum(1 for v in vulns if v["severity"] == "High")
-    ssl_info = raw_intel.get("ssl_metadata", {"status": "Unknown", "issuer": "Unknown"})
-    
-    with print_lock:
-        print(f"[{idx}/{total}] RUNNING ENHANCED SCAN AGAINST: {target}")
-        print(f"    ├── Status: {raw_intel['status']} | Platform: {raw_intel['server_banner']}")
-        print(f"    └── SSL: {ssl_info['status']} | Authority: {ssl_info['issuer']}")
-        print("-" * 65)
+def init_db():
+    with sqlite3.connect(DB_FILE) as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS cache (ip TEXT PRIMARY KEY, data TEXT, timestamp REAL)")
 
-    # Format the file path to maintain uniform telemetry tracking
-    sanitized = target.replace("https://", "").replace("http://", "").replace("/", "_")
-    output_path = f"output/https__{sanitized}.json"
-    with open(output_path, "w") as out_file:
-        json.dump(raw_intel, out_file, indent=4)
+def get_ip(target):
+    """Resolves a domain name to an IP address."""
+    try: 
+        return socket.gethostbyname(target)
+    except socket.gaierror: 
+        return target # Return as-is if it's already an IP or resolution fails
+
+async def fetch_intel(ip):
+    """Fetches and caches Shodan/Censys data."""
+    init_db()
+    with sqlite3.connect(DB_FILE) as conn:
+        row = conn.execute("SELECT data, timestamp FROM cache WHERE ip=?", (ip,)).fetchone()
+        if row and (time.time() - row[1] < 86400): 
+            return json.loads(row[0])
+    
+    try:
+        loop = asyncio.get_event_loop()
+        # Fetch from APIs concurrently
+        task1 = loop.run_in_executor(None, shodan_api.host, ip)
+        task2 = loop.run_in_executor(None, censys_api.view, ip)
+        results = await asyncio.gather(task1, task2, return_exceptions=True)
+        
+        report = {
+            "shodan": results[0] if not isinstance(results[0], Exception) else None,
+            "censys": results[1] if not isinstance(results[1], Exception) else None
+        }
+        
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.execute("INSERT OR REPLACE INTO cache VALUES (?, ?, ?)", (ip, json.dumps(report), time.time()))
+        return report
+    except Exception as e:
+        return {"error": str(e)}
+
+# --- CORE SCANNING LOGIC ---
+def process_single_target(target, idx, total):
+    ip = get_ip(target)
+    print(f"[{idx}/{total}] SCANNING: {target} (Resolved: {ip})")
+    
+    intel = asyncio.run(fetch_intel(ip))
+    shodan_data = intel.get("shodan", {})
+    
+    if shodan_data and "ports" in shodan_data:
+        ports = shodan_data["ports"]
+        with print_lock:
+            print(f"    - Open Ports: {ports}")
+            if 22 in ports: print("    [!] ALERT: SSH (22) exposed!")
+            if 3389 in ports: print("    [!] ALERT: RDP (3389) exposed!")
+    else:
+        print("    - Intelligence: No public data found.")
+    print("-" * 40)
 
 def run_engine():
-    print("=" * 65)
-    print("  ▲ ARCHON v4.0 // PASSIVE ASSET HARVEST & THREAT MATRIX ▲")
-    print("=" * 65)
-    
-    # Clean old records before fresh intelligence gathering
-    if os.path.exists("output"):
-        for f in os.listdir("output"):
-            if f.endswith(".json"):
-                os.remove(os.path.join("output", f))
-
-    root_target = input("[+] Enter Root Corporate Domain (e.g., github.com): ").strip()
-    if not root_target:
-        print("[✗] Error: Target cannot be null.")
+    if not os.path.exists("targets.txt"): 
+        print("ERROR: targets.txt missing.")
         return
-
-    print(f"\n[*] Activating Passive Discovery Array against global logs...")
-    scout = ArchonScout()
-    targets = scout.harvest_subdomains(root_target)
-
-    if not targets:
-        print(f"[!] No secondary perimeters found in public logs. Defaulting to root.")
-        targets = [root_target]
-    else:
-        print(f"[✓] Successfully harvested {len(targets)} active subdomains passively!")
-        print("-" * 65)
-        for t in targets:
-            print(f"  └─► Discovered: {t}")
-        print("-" * 65)
-
-    print("\n[*] Initializing High-Speed Concurrent Auditing Thread Pool...")
-    print("=" * 65)
+    with open("targets.txt", "r") as f:
+        targets = [line.strip() for line in f if line.strip()]
     
-    sensor = ArchonEyes()
-    os.makedirs("output", exist_ok=True)
-
-    max_threads = min(5, len(targets))
-    with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        futures = []
-        for idx, target in enumerate(targets, start=1):
-            futures.append(executor.submit(process_single_target, sensor, target, idx, len(targets)))
-        
-        for future in as_completed(futures):
-            pass
-
-    print("\n" + "=" * 65)
-    print("  ▲ SCAN MATRIX COMPLETE // INITIATING MASTER POSTURE SUMMARY ▲")
-    print("=" * 65)
-    print("\n")
-    
-    generate_master_report()
+    print("--- ARCHON v4.1 ACTIVE ---")
+    for idx, target in enumerate(targets, 1):
+        process_single_target(target, idx, len(targets))
 
 if __name__ == "__main__":
     run_engine()
