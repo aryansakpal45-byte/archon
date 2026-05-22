@@ -1,16 +1,19 @@
 import os
 from censys.search import CensysHosts
-from .base import BaseConnector
+from connector.base import BaseConnector
 
 class CensysConnector(BaseConnector):
     def __init__(self):
-        # Ensure we are grabbing the exact key name from .env
-        token = os.getenv("CENSYS_API_TOKEN")
-        if not token:
-            raise ValueError("CENSYS_API_TOKEN is missing from .env file!")
+        # Explicitly get the token from your .env
+        self.api_token = os.getenv("CENSYS_API_TOKEN")
         
-        # Explicitly passing api_token
-        self.api = CensysHosts(api_token=token)
+        # This is the key: pass 'api_token' explicitly to the constructor
+        # This overrides the library's internal search for ID/Secret
+        self.api = CensysHosts(api_token=self.api_token)
+        
+        # 2. Force the client to use the token ONLY
+        # Passing 'api_token' here overrides the library's search for ID/Secret
+        self.api = CensysHosts(api_token=self.api_token)
 
     def fetch(self, target):
         try:
