@@ -4,22 +4,18 @@ from connector.base import BaseConnector
 
 class CensysConnector(BaseConnector):
     def __init__(self):
-        # Ensure we are pulling the correct key
-        self.api_token = os.getenv("CENSYS_API_TOKEN")
+        # 1. Grab your actual token
+        token = os.getenv("CENSYS_API_TOKEN")
         
-        if not self.api_token:
-            raise ValueError("CENSYS_API_TOKEN not found in .env file.")
+        # 2. Inject dummy environment variables to satisfy the library's internal check
+        os.environ["CENSYS_API_ID"] = "DUMMY_ID"
+        os.environ["CENSYS_API_SECRET"] = "DUMMY_SECRET"
         
-        # EXPLICIT FIX: We pass api_token, and explicitly set id/secret to None
-        # to prevent the library from searching the environment for legacy keys.
-        self.api = CensysHosts(
-            api_id=None, 
-            api_secret=None, 
-            api_token=self.api_token
-        )
+        # 3. Initialize the client
+        self.api = CensysHosts(api_token=token)
 
     def fetch(self, target):
         try:
             return self.api.view(target)
         except Exception as e:
-            return {"error": f"Censys Fetch Error: {str(e)}"}
+            return {"error": str(e)}
